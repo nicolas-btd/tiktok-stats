@@ -41,9 +41,27 @@ def nb(x, dec=1):
     return f"{float(x):.{dec}f}".replace(".", ",")
 
 
+def courbe_retention(d):
+    """[(seconde, % de spectateurs restants)] triés par seconde."""
+    ret = val(d, "video_retention_rate_realtime", "value") or {}
+    pic = float(ret.get("peak_value") or 1000)
+    courbe = []
+    for p in sorted(ret.get("list") or [], key=lambda p: float(p.get("timestamp") or 0)):
+        if p.get("value") is None:
+            continue
+        v = float(p["value"])
+        courbe.append((round(float(p.get("timestamp") or 0) / 1000), v * 100 if v <= 1 else v * 100 / pic))
+    return courbe
+
+
 def extraire(vid, dossier, d, date_releve):
     info = d.get("video_info") or {}
     stats = info.get("statistics") or {}
+    courbe = courbe_retention(d)
+    par_seconde = dict(courbe)
+
+    fin = val(d, "video_finish_rate_realtime", "value", "value")
+    sources = val(d, "video_traffic_source_percent_realtime", "value", "value") or []
     create = info.get("create_time")
     duree = val(info, "video", "duration")
 
@@ -55,11 +73,19 @@ def extraire(vid, dossier, d, date_releve):
         "legende": (info.get("desc") or "").replace("\n", " ")[:100],
         "duree_s": nb(duree / 1000 if duree else None),
         "vues": val(d, "realtime_total_video_views", "value", "value") or stats.get("play_count", ""),
+        "retention_1s": nb(par_seconde.get(1), 0),
+        "retention_3s": nb(par_seconde.get(3), 0),
+        "retention_5s": nb(par_seconde.get(5), 0),
+        "retention_10s": nb(par_seconde.get(10), 0),
+        "temps_moyen_s": nb(val(d, "video_per_duration_realtime", "value", "value")),
+        "vue_entiere_pct": nb(fin * 100 if fin is not None else None),
         "commentaires": stats.get("comment_count", ""),
         "partages": stats.get("share_count", ""),
         "nouveaux_abonnes": val(d, "realtime_new_followers", "value", "value") or "",
+        "sources_trafic": " | ".join(
+            f"{s.get('key')}={s.get('str_value') or s.get('value')}" for s in sources),
     }
-    return ligne
+    return ligne, courbe
 
 
 async def capturer(page, vid, reponses, essais=2, attente=50):
@@ -73,7 +99,7 @@ async def capturer(page, vid, reponses, essais=2, attente=50):
                 if "tiktokstudio/content" in page.url or "not-found" in page.url:
                     break
                 d = fusionner(reponses)
-                if "video_info" in d:
+                if "video_retention_rate_realtime" in d and "video_info" in d:
                     return True
             if reponses:
                 return False
