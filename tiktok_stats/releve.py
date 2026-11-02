@@ -144,3 +144,40 @@ async def capturer(page, vid, reponses, essais=2, attente=50):
             print(f"   ⚠️ Tentative {tentative + 1}/{essais} pour {vid} : {e}")
             await page.wait_for_timeout(1500)
     return False
+
+
+def ecrire_resume(dossier: Path, ligne, courbe, heures):
+    leg = ligne["legende"]
+    titre = leg.split("?")[0] + " ?" if "?" in leg else leg[:60]
+    L = [f"# 📊 {titre}\n",
+         f"Dernier relevé : **{ligne['date_releve']}** · publiée le {ligne['publiee_le']} "
+         f"· durée {ligne['duree_s']} s · ID {ligne['video_id']}\n",
+         "| Vues | Rét. 1 s | Rét. 3 s | Rét. 10 s | Temps moyen | Vue entière | Comm. | Partages | Abonnés |",
+         "|---|---|---|---|---|---|---|---|---|",
+         f"| {ligne['vues']} | {ligne['retention_1s']} % | {ligne['retention_3s']} % | "
+         f"{ligne['retention_10s']} % | {ligne['temps_moyen_s']} s | {ligne['vue_entiere_pct']} % | "
+         f"{ligne['commentaires']} | {ligne['partages']} | {ligne['nouveaux_abonnes'] or 0} |",
+         "\n## Rétention\n", "| Seconde | Spectateurs restants |", "|---|---|"]
+    for s, v in courbe:
+        if s <= 10 or s % 5 == 0 or s == courbe[-1][0]:
+            L.append(f"| {s} s | {v:.0f} % |")
+
+    L += ["\n## Vues par heure\n", "| Heure | Vues |", "|---|---|"]
+    L += [f"| {h} | {v} |" for h, v in heures]
+
+    L += ["\n## Historique des relevés\n",
+          "| Relevé | Vues | Rét. 3 s | Temps moyen | Vue entière | Comm. | Partages |",
+          "|---|---|---|---|---|---|---|"]
+    if (dossier / "stats.csv").exists():
+        with (dossier / "stats.csv").open(encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f, delimiter=";"):
+                L.append(f"| {r['date_releve']} | {r['vues']} | {r['retention_3s']} % | "
+                         f"{r['temps_moyen_s']} s | {r['vue_entiere_pct']} % | "
+                         f"{r['commentaires']} | {r['partages']} |")
+
+    if ligne["sources_trafic"]:
+        L.append("\n## Sources de trafic\n")
+        L += [f"- {s}" for s in ligne["sources_trafic"].split(" | ")]
+
+    L.append(f"\n**Légende publiée :** {leg}")
+    (dossier / "stats.md").write_text("\n".join(L) + "\n", encoding="utf-8")
