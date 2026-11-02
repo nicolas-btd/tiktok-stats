@@ -181,3 +181,38 @@ def ecrire_resume(dossier: Path, ligne, courbe, heures):
 
     L.append(f"\n**Légende publiée :** {leg}")
     (dossier / "stats.md").write_text("\n".join(L) + "\n", encoding="utf-8")
+
+
+def traiter(vid, dossier, reponses, date_releve, dossier_suivi: Path, dossier_videos: Path):
+    d = fusionner(reponses)
+    if "video_retention_rate_realtime" not in d:
+        print(f"⚠️ {vid} : stats introuvables (page pas chargée ou captcha ?)")
+        return
+    ligne, heures, courbe = extraire(vid, dossier, d, date_releve)
+    ajouter_ligne(dossier_suivi / "suivi.csv", ligne)
+    table = maj_horaire(dossier_suivi / "vues_par_heure.csv", heures)
+
+    print(f"✅ {vid} | {ligne['vues']} vues | rét. 3 s {ligne['retention_3s'] or '?'} % "
+          f"| moy. {ligne['temps_moyen_s']} s | entière {ligne['vue_entiere_pct']} % "
+          f"| {ligne['commentaires']} comm. | {ligne['partages']} partages")
+    print(f"   Légende : {ligne['legende'][:70]}")
+
+    if not dossier:
+        return
+    chemin = dossier_videos / dossier
+    if not chemin.is_dir():
+        return
+    ajouter_ligne(chemin / "stats.csv", ligne)
+    heures_vid = sorted((h, v) for (i, h), v in table.items() if i == vid)
+    ecrire_resume(chemin, ligne, courbe, heures_vid)
+
+
+def hors_ligne(dossier_brutes: Path, dossier_suivi: Path, dossier_videos: Path, videos):
+    for vid, dossier in videos:
+        fichiers = sorted(dossier_brutes.glob(f"{vid}_*.json"), key=lambda f: f.stat().st_mtime)
+        if not fichiers:
+            print(f"⚠️ {vid} : aucun fichier dans {dossier_brutes}")
+            continue
+        f = fichiers[-1]
+        traiter(vid, dossier, json.loads(f.read_text()), datetime.fromtimestamp(f.stat().st_mtime),
+                dossier_suivi, dossier_videos)
