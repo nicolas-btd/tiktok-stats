@@ -85,7 +85,28 @@ def extraire(vid, dossier, d, date_releve):
         "sources_trafic": " | ".join(
             f"{s.get('key')}={s.get('str_value') or s.get('value')}" for s in sources),
     }
-    return ligne, courbe
+    heures = [
+        (vid, datetime.fromtimestamp(int(p["key"])).strftime("%Y-%m-%d %H:00"), p.get("value", 0))
+        for p in (val(d, "realtime_video_view_history", "list") or []) if p.get("key")
+    ]
+    return ligne, heures, courbe
+
+
+def maj_horaire(chemin_horaire: Path, heures):
+    import csv
+    table = {}
+    if chemin_horaire.exists():
+        with chemin_horaire.open(encoding="utf-8-sig") as f:
+            for r in csv.DictReader(f, delimiter=";"):
+                table[(r["video_id"], r["heure"])] = r["vues"]
+    for vid, heure, vues in heures:
+        table[(vid, heure)] = vues
+    with chemin_horaire.open("w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f, delimiter=";")
+        w.writerow(["video_id", "heure", "vues"])
+        for (vid, heure), vues in sorted(table.items()):
+            w.writerow([vid, heure, vues])
+    return table
 
 
 async def capturer(page, vid, reponses, essais=2, attente=50):
