@@ -1,5 +1,6 @@
 """Moteur de relevé : extraction des stats d'une vidéo via Chrome DevTools Protocol."""
 import asyncio
+import csv
 import json
 import sys
 from datetime import datetime
@@ -7,6 +8,13 @@ from pathlib import Path
 
 STATS_URL = "https://www.tiktok.com/tiktokstudio/analytics/{}"
 INSIGHT = "/aweme/v2/data/insight/"
+
+COLONNES = [
+    "date_releve", "video_id", "dossier", "publiee_le", "legende", "duree_s", "vues",
+    "retention_1s", "retention_3s", "retention_5s", "retention_10s",
+    "temps_moyen_s", "vue_entiere_pct", "commentaires", "partages",
+    "nouveaux_abonnes", "sources_trafic",
+]
 
 
 async def connecter(p, cdp_url="http://127.0.0.1:9222"):
@@ -92,8 +100,17 @@ def extraire(vid, dossier, d, date_releve):
     return ligne, heures, courbe
 
 
+def ajouter_ligne(chemin: Path, ligne):
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    nouveau = not chemin.exists()
+    with chemin.open("a", newline="", encoding="utf-8-sig" if nouveau else "utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=COLONNES, delimiter=";")
+        if nouveau:
+            w.writeheader()
+        w.writerow(ligne)
+
+
 def maj_horaire(chemin_horaire: Path, heures):
-    import csv
     table = {}
     if chemin_horaire.exists():
         with chemin_horaire.open(encoding="utf-8-sig") as f:
@@ -110,7 +127,6 @@ def maj_horaire(chemin_horaire: Path, heures):
 
 
 async def capturer(page, vid, reponses, essais=2, attente=50):
-    """Ouvre la page analytics d'une vidéo et attend les réponses insight. Renvoie True si complet."""
     for tentative in range(essais):
         reponses.clear()
         try:
