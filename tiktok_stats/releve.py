@@ -216,3 +216,25 @@ def hors_ligne(dossier_brutes: Path, dossier_suivi: Path, dossier_videos: Path, 
         f = fichiers[-1]
         traiter(vid, dossier, json.loads(f.read_text()), datetime.fromtimestamp(f.stat().st_mtime),
                 dossier_suivi, dossier_videos)
+
+
+def lire_videos_fichier(videos_txt: Path):
+    """videos.txt : une vidéo par ligne → `ID [dossier]   # commentaire`."""
+    videos = []
+    if not videos_txt.exists():
+        return videos
+    for l in videos_txt.read_text(encoding="utf-8").splitlines():
+        l = l.split("#")[0].strip()
+        if not l:
+            continue
+        parts = l.split()
+        videos.append((parts[0], parts[1] if len(parts) > 1 else None))
+    return videos
+
+
+def dossier_video_chemin(videos_dir: Path, dossier: str) -> Path | None:
+    chemin = videos_dir / dossier
+    if chemin.is_dir():
+        return chemin
+    trouve = sorted(p for p in videos_dir.rglob(Path(dossier).name) if p.is_dir())
+    return trouve[0] if trouve else None
