@@ -31,6 +31,11 @@ def chercher_videos(obj, trouvees):
             t["legende"] = str(obj["desc"]).replace("\n", " ")
             if obj.get("create_time"):
                 t["create_time"] = int(obj["create_time"])
+            # visibility : 1 = public, 2 = « Moi uniquement », 3 = amis · status 140 = privé
+            if obj.get("visibility") == 1:
+                t["is_private"] = False
+            elif obj.get("visibility") in (2, "2") or obj.get("status") == 140 or obj.get("is_private") is True:
+                t["is_private"] = True
         for v in obj.values():
             chercher_videos(v, trouvees)
     elif isinstance(obj, list):
@@ -43,3 +48,19 @@ async def ouvrir_contenu(nav):
     page = existantes[0] if existantes else await nav.contexts[0].new_page()
     await page.bring_to_front()
     return page, bool(existantes)
+
+JS_LIENS = """() => {
+    const results = [];
+    document.querySelectorAll("a[href]").forEach(a => {
+        if (!/\\/video\\/|\\/analytics\\//.test(a.href)) return;
+        let cur = a, isPrivate = null;
+        for (let i = 0; i < 15; i++) {
+            if (!cur.parentElement) break;
+            cur = cur.parentElement;
+            const m = cur.innerText.match(/Tout le monde|Moi uniquement|Amis|Privé|Everyone|Only me|Friends|Private/g);
+            if (m && m.length === 1) { isPrivate = !/Tout le monde|Everyone/.test(m[0]); break; }
+        }
+        results.push({href: a.href, text: a.innerText, is_private: isPrivate});
+    });
+    return results;
+}"""
