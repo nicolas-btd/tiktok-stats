@@ -127,3 +127,15 @@ def associer_videos(videos_dir: Path, marqueurs, mots_ignores, seuil_association
             resultat[vid] = nom
             pris.add(nom)
     return resultat
+
+def ecrire_videos_txt_fichier(videos_txt: Path, ordre, trouvees, connus, assoc):
+    lignes = ["# ID de la vidéo        dossier       # légende",
+              "# Généré par tiktok-stats — vous pouvez corriger un dossier à la main, il sera conservé."]
+    for vid in ordre + [v for v in connus if v not in ordre]:
+        if trouvees.get(vid, {}).get("is_private"):
+            continue
+        dossier = assoc.get(vid) or connus.get(vid) or ""
+        leg = trouvees.get(vid, {}).get("legende", "")[:60].replace("#", "")
+        lignes.append(f"{vid}  {dossier:<12}  # {leg}")
+    videos_txt.parent.mkdir(parents=True, exist_ok=True)
+    videos_txt.write_text("\n".join(lignes) + "\n", encoding="utf-8")
