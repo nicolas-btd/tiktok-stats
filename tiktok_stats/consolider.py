@@ -79,3 +79,19 @@ def ligne_video_donnees(dossier_brutes: Path, vid, dossier, sujets_map=None):
         "pour_toi_pct": pour_toi,
         "legende": legende,
     }
+
+def generer_rapport_consolidation(resultats, titre="Tableau statistique global des vidéos publiques"):
+    maintenant = datetime.now().strftime("%d/%m/%Y à %Hh%M")
+    L = [f"# 📊 {titre}",
+         f"> Relevé consolidé le **{maintenant}** · **{len(resultats)} vidéos publiques actives**.",
+         "",
+         "| Vidéo | Date Pub. | Heure | Sujet | Durée | Vues | Likes (Tx) | Comm. (Tx) | Part. | Fav. | Abos | Rét. 1s | Rét. 3s | Rét. 5s | Rét. 10s | Tps Moy. | % Tps | Vue Entière | % Pour Toi |",
+         "|---|:---:|:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|"]
+    for r in resultats:
+        L.append(
+            f"| {r['dossier']} | {r['date_publication']} | {r['heure_publication']} | **{r['sujet']}** | "
+            f"{int(r['duree_s'])}s | **{r['vues']:,}** | {r['likes']} ({r['taux_likes_pct']}%) | "
+            f"{r['commentaires']} ({r['taux_commentaires_pct']}%) | {r['partages']} | {r['favoris']} | +{r['nouveaux_abonnes']} | "
+            f"{int(r['retention_1s_pct'])}% | {int(r['retention_3s_pct'])}% | {int(r['retention_5s_pct'])}% | {int(r['retention_10s_pct'])}% | "
+            f"{r['temps_moyen_s']}s | {int(r['ratio_temps_moyen_pct'])}% | **{r['vue_entiere_pct']}%** | {int(r['pour_toi_pct'])}% |")
+    return "\n".join(L) + "\n"
