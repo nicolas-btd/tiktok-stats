@@ -4,7 +4,8 @@ import shutil
 import subprocess
 import sys
 import urllib.request
-from pathlib import Path
+
+from .config import Config
 
 CANDIDATS = {
     "Darwin": ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
@@ -13,11 +14,9 @@ CANDIDATS = {
                 r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"],
 }
 
-DEFAULT_CDP_URL = "http://127.0.0.1:9222"
-DEFAULT_PROFILE = Path.home() / ".tiktok-stats" / "chrome-profile"
-
 
 def trouver_chrome():
+    from pathlib import Path
     for c in CANDIDATS.get(platform.system(), []):
         if Path(c).exists():
             return c
@@ -27,25 +26,25 @@ def trouver_chrome():
     return None
 
 
-def deja_lance(cdp_url: str = DEFAULT_CDP_URL) -> bool:
+def deja_lance(cfg: Config) -> bool:
     try:
-        urllib.request.urlopen(cdp_url.rstrip("/") + "/json/version", timeout=2)
+        urllib.request.urlopen(cfg.cdp_url.rstrip("/") + "/json/version", timeout=2)
         return True
     except Exception:
         return False
 
 
-def lancer(cdp_url: str = DEFAULT_CDP_URL, profile_dir: Path = DEFAULT_PROFILE):
-    if deja_lance(cdp_url):
-        print(f"✅ Chrome répond déjà sur {cdp_url}")
+def lancer(cfg: Config):
+    if deja_lance(cfg):
+        print(f"✅ Chrome répond déjà sur {cfg.cdp_url}")
         return
     exe = trouver_chrome()
     if not exe:
         sys.exit("❌ Google Chrome introuvable.")
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.Popen([exe, "--remote-debugging-port=9222",
-                      f"--user-data-dir={profile_dir}",
+    cfg.chrome_profile.mkdir(parents=True, exist_ok=True)
+    subprocess.Popen([exe, f"--remote-debugging-port={cfg.cdp_port}",
+                      f"--user-data-dir={cfg.chrome_profile}",
                       "https://www.tiktok.com/tiktokstudio/content"],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    print(f"🚀 Chrome lancé (port 9222, profil {profile_dir}).")
+    print(f"🚀 Chrome lancé (port {cfg.cdp_port}, profil {cfg.chrome_profile}).")
     print("   Connectez-vous à TikTok Studio dans cette fenêtre si ce n'est pas déjà fait.")

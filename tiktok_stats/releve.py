@@ -1,10 +1,12 @@
-"""Moteur de relevé : extraction des stats d'une vidéo via Chrome DevTools Protocol."""
+"""Moteur de relevé : extraction des stats d'une vidéo, suivi.csv, vues_par_heure.csv, stats.md/.csv par dossier."""
 import asyncio
 import csv
 import json
 import sys
 from datetime import datetime
 from pathlib import Path
+
+from .config import Config
 
 STATS_URL = "https://www.tiktok.com/tiktokstudio/analytics/{}"
 INSIGHT = "/aweme/v2/data/insight/"
@@ -17,11 +19,25 @@ COLONNES = [
 ]
 
 
-async def connecter(p, cdp_url="http://127.0.0.1:9222"):
+def lire_videos(cfg: Config):
+    """videos.txt : une vidéo par ligne → `ID [dossier]   # commentaire`."""
+    videos = []
+    if not cfg.videos_txt.exists():
+        return videos
+    for l in cfg.videos_txt.read_text(encoding="utf-8").splitlines():
+        l = l.split("#")[0].strip()
+        if not l:
+            continue
+        parts = l.split()
+        videos.append((parts[0], parts[1] if len(parts) > 1 else None))
+    return videos
+
+
+async def connecter(p, cfg: Config):
     try:
-        return await p.chromium.connect_over_cdp(cdp_url)
+        return await p.chromium.connect_over_cdp(cfg.cdp_url)
     except Exception:
-        sys.exit(f"❌ Chrome ne répond pas sur {cdp_url}. Lancez Chrome avec le port 9222.")
+        sys.exit(f"❌ Chrome ne répond pas sur {cfg.cdp_url}. Lancez d'abord : tiktok-stats chrome")
 
 
 def fusionner(reponses):
@@ -110,40 +126,20 @@ def ajouter_ligne(chemin: Path, ligne):
         w.writerow(ligne)
 
 
-def maj_horaire(chemin_horaire: Path, heures):
+def maj_horaire(cfg: Config, heures):
     table = {}
-    if chemin_horaire.exists():
-        with chemin_horaire.open(encoding="utf-8-sig") as f:
+    if cfg.horaire.exists():
+        with cfg.horaire.open(encoding="utf-8-sig") as f:
             for r in csv.DictReader(f, delimiter=";"):
                 table[(r["video_id"], r["heure"])] = r["vues"]
     for vid, heure, vues in heures:
         table[(vid, heure)] = vues
-    with chemin_horaire.open("w", newline="", encoding="utf-8-sig") as f:
+    with cfg.horaire.open("w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(["video_id", "heure", "vues"])
         for (vid, heure), vues in sorted(table.items()):
             w.writerow([vid, heure, vues])
     return table
-
-
-async def capturer(page, vid, reponses, essais=2, attente=50):
-    for tentative in range(essais):
-        reponses.clear()
-        try:
-            await page.goto(STATS_URL.format(vid), wait_until="commit", timeout=30000)
-            for _ in range(attente):
-                await page.wait_for_timeout(500)
-                if "tiktokstudio/content" in page.url or "not-found" in page.url:
-                    break
-                d = fusionner(reponses)
-                if "video_retention_rate_realtime" in d and "video_info" in d:
-                    return True
-            if reponses:
-                return False
-        except Exception as e:
-            print(f"   ⚠️ Tentative {tentative + 1}/{essais} pour {vid} : {e}")
-            await page.wait_for_timeout(1500)
-    return False
 
 
 def ecrire_resume(dossier: Path, ligne, courbe, heures):
@@ -168,12 +164,11 @@ def ecrire_resume(dossier: Path, ligne, courbe, heures):
     L += ["\n## Historique des relevés\n",
           "| Relevé | Vues | Rét. 3 s | Temps moyen | Vue entière | Comm. | Partages |",
           "|---|---|---|---|---|---|---|"]
-    if (dossier / "stats.csv").exists():
-        with (dossier / "stats.csv").open(encoding="utf-8-sig") as f:
-            for r in csv.DictReader(f, delimiter=";"):
-                L.append(f"| {r['date_releve']} | {r['vues']} | {r['retention_3s']} % | "
-                         f"{r['temps_moyen_s']} s | {r['vue_entiere_pct']} % | "
-                         f"{r['commentaires']} | {r['partages']} |")
+    with (dossier / "stats.csv").open(encoding="utf-8-sig") as f:
+        for r in csv.DictReader(f, delimiter=";"):
+            L.append(f"| {r['date_releve']} | {r['vues']} | {r['retention_3s']} % | "
+                     f"{r['temps_moyen_s']} s | {r['vue_entiere_pct']} % | "
+                     f"{r['commentaires']} | {r['partages']} |")
 
     if ligne["sources_trafic"]:
         L.append("\n## Sources de trafic\n")
@@ -183,14 +178,23 @@ def ecrire_resume(dossier: Path, ligne, courbe, heures):
     (dossier / "stats.md").write_text("\n".join(L) + "\n", encoding="utf-8")
 
 
-def traiter(vid, dossier, reponses, date_releve, dossier_suivi: Path, dossier_videos: Path):
+def dossier_video(cfg: Config, dossier: str) -> Path | None:
+    """Résout un nom de videos.txt : chemin relatif à videos_dir, sinon recherche par nom."""
+    chemin = cfg.videos_dir / dossier
+    if chemin.is_dir():
+        return chemin
+    trouve = sorted(p for p in cfg.videos_dir.rglob(Path(dossier).name) if p.is_dir())
+    return trouve[0] if trouve else None
+
+
+def traiter(cfg: Config, vid, dossier, reponses, date_releve):
     d = fusionner(reponses)
     if "video_retention_rate_realtime" not in d:
         print(f"⚠️ {vid} : stats introuvables (page pas chargée ou captcha ?)")
         return
     ligne, heures, courbe = extraire(vid, dossier, d, date_releve)
-    ajouter_ligne(dossier_suivi / "suivi.csv", ligne)
-    table = maj_horaire(dossier_suivi / "vues_par_heure.csv", heures)
+    ajouter_ligne(cfg.suivi, ligne)
+    table = maj_horaire(cfg, heures)
 
     print(f"✅ {vid} | {ligne['vues']} vues | rét. 3 s {ligne['retention_3s'] or '?'} % "
           f"| moy. {ligne['temps_moyen_s']} s | entière {ligne['vue_entiere_pct']} % "
@@ -198,43 +202,87 @@ def traiter(vid, dossier, reponses, date_releve, dossier_suivi: Path, dossier_vi
     print(f"   Légende : {ligne['legende'][:70]}")
 
     if not dossier:
+        print("   ℹ️ Pas de dossier associé dans videos.txt → seulement suivi.csv")
         return
-    chemin = dossier_videos / dossier
-    if not chemin.is_dir():
+    chemin = dossier_video(cfg, dossier)
+    if not chemin:
+        print(f"   ⚠️ Dossier {dossier} introuvable dans {cfg.videos_dir} → seulement suivi.csv")
         return
     ajouter_ligne(chemin / "stats.csv", ligne)
     heures_vid = sorted((h, v) for (i, h), v in table.items() if i == vid)
     ecrire_resume(chemin, ligne, courbe, heures_vid)
+    rel = chemin.relative_to(cfg.racine) if chemin.is_relative_to(cfg.racine) else chemin
+    print(f"   📁 {rel}/stats.csv + stats.md")
 
 
-def hors_ligne(dossier_brutes: Path, dossier_suivi: Path, dossier_videos: Path, videos):
+def hors_ligne(cfg: Config, videos):
     for vid, dossier in videos:
-        fichiers = sorted(dossier_brutes.glob(f"{vid}_*.json"), key=lambda f: f.stat().st_mtime)
+        fichiers = sorted(cfg.brutes.glob(f"{vid}_*.json"), key=lambda f: f.stat().st_mtime)
         if not fichiers:
-            print(f"⚠️ {vid} : aucun fichier dans {dossier_brutes}")
+            print(f"⚠️ {vid} : aucun fichier dans {cfg.brutes}")
             continue
         f = fichiers[-1]
-        traiter(vid, dossier, json.loads(f.read_text()), datetime.fromtimestamp(f.stat().st_mtime),
-                dossier_suivi, dossier_videos)
+        traiter(cfg, vid, dossier, json.loads(f.read_text()), datetime.fromtimestamp(f.stat().st_mtime))
 
 
-def lire_videos_fichier(videos_txt: Path):
-    """videos.txt : une vidéo par ligne → `ID [dossier]   # commentaire`."""
-    videos = []
-    if not videos_txt.exists():
-        return videos
-    for l in videos_txt.read_text(encoding="utf-8").splitlines():
-        l = l.split("#")[0].strip()
-        if not l:
-            continue
-        parts = l.split()
-        videos.append((parts[0], parts[1] if len(parts) > 1 else None))
-    return videos
+async def capturer(page, vid, reponses, essais=2, attente=50):
+    """Ouvre la page analytics d'une vidéo et attend les réponses insight. Renvoie True si complet."""
+    for tentative in range(essais):
+        reponses.clear()
+        try:
+            await page.goto(STATS_URL.format(vid), wait_until="commit", timeout=30000)
+            for _ in range(attente):
+                await page.wait_for_timeout(500)
+                if "tiktokstudio/content" in page.url or "not-found" in page.url:
+                    break
+                d = fusionner(reponses)
+                if "video_retention_rate_realtime" in d and "video_info" in d:
+                    return True
+            if reponses:
+                return False
+        except Exception as e:
+            print(f"   ⚠️ Tentative {tentative + 1}/{essais} pour {vid} : {e}")
+            await page.wait_for_timeout(1500)
+    return False
 
 
-def dossier_video_chemin(videos_dir: Path, dossier: str) -> Path | None:
-    chemin = videos_dir / dossier
-    if chemin.is_dir():
-        return chemin
-    trouve = sorted(p for p in videos_dir.rglob(Path(dossier).name) if p.is_dir())
-    return trouve[0] if trouve else None
+async def en_ligne(cfg: Config, videos):
+    from playwright.async_api import async_playwright
+    cfg.brutes.mkdir(parents=True, exist_ok=True)
+    async with async_playwright() as p:
+        nav = await connecter(p, cfg)
+        page = await nav.contexts[0].new_page()
+        reponses = []
+
+        async def on_response(resp):
+            if INSIGHT not in resp.url:
+                return
+            try:
+                reponses.append({"url": resp.url, "data": await resp.json()})
+            except Exception:
+                pass
+
+        page.on("response", on_response)
+        for vid, dossier in videos:
+            await capturer(page, vid, reponses)
+            await page.wait_for_timeout(1000)
+            maintenant = datetime.now()
+            if reponses:
+                (cfg.brutes / f"{vid}_{maintenant:%Y-%m-%d_%Hh%M}.json").write_text(
+                    json.dumps(reponses, ensure_ascii=False))
+            traiter(cfg, vid, dossier, reponses, maintenant)
+            await page.wait_for_timeout(3000)
+        await page.close()
+
+
+def lancer(cfg: Config, ids, hors_ligne_seul=False):
+    videos = lire_videos(cfg)
+    if ids:
+        connus = dict(videos)
+        videos = [(i, connus.get(i)) for i in ids]
+    if not videos:
+        sys.exit(f"Aucune vidéo : passez un ID en argument ou remplissez {cfg.videos_txt}")
+    if hors_ligne_seul:
+        hors_ligne(cfg, videos)
+    else:
+        asyncio.run(en_ligne(cfg, videos))

@@ -2,8 +2,8 @@
 import asyncio
 import json
 from datetime import datetime
-from pathlib import Path
 
+from .config import Config
 from .releve import STATS_URL, connecter
 
 MOTS_CLES = ("watch", "retention", "finish", "play", "view", "duration", "comment", "share")
@@ -24,11 +24,12 @@ def chercher_champs(obj, chemin="", trouves=None):
     return trouves
 
 
-async def decouvrir(cdp_url: str, dossier_decouverte: Path, ids):
+async def principal(cfg: Config, ids):
     from playwright.async_api import async_playwright
-    dossier_decouverte.mkdir(parents=True, exist_ok=True)
+    dossier = cfg.brutes / "decouverte"
+    dossier.mkdir(parents=True, exist_ok=True)
     async with async_playwright() as p:
-        nav = await connecter(p, cdp_url)
+        nav = await connecter(p, cfg)
         page = await nav.contexts[0].new_page()
         reponses = []
 
@@ -45,7 +46,7 @@ async def decouvrir(cdp_url: str, dossier_decouverte: Path, ids):
             reponses.clear()
             await page.goto(STATS_URL.format(vid), wait_until="domcontentloaded")
             await page.wait_for_timeout(8000)
-            f = dossier_decouverte / f"{vid}_{datetime.now():%Y-%m-%d_%Hh%M}.json"
+            f = dossier / f"{vid}_{datetime.now():%Y-%m-%d_%Hh%M}.json"
             f.write_text(json.dumps(reponses, ensure_ascii=False, indent=2))
             print(f"\n=== {vid} : {len(reponses)} réponses JSON → {f}")
             for r in reponses:
@@ -56,3 +57,7 @@ async def decouvrir(cdp_url: str, dossier_decouverte: Path, ids):
                         print(f"      {chemin} = {ap}")
             await page.wait_for_timeout(4000)
         await page.close()
+
+
+def lancer(cfg: Config, ids):
+    asyncio.run(principal(cfg, ids))

@@ -3,6 +3,7 @@ import json
 import sys
 from pathlib import Path
 
+from .config import Config
 from .releve import INSIGHT
 
 
@@ -20,14 +21,14 @@ def apercu(v, profondeur=0):
     return str(v)[:40]
 
 
-def lancer_explorer(dossier_brutes: Path, fichier: str | None = None):
+def lancer(cfg: Config, fichier: str | None):
     if fichier:
         f = Path(fichier)
     else:
-        fichiers = sorted((x for x in dossier_brutes.glob("*.json") if not x.name.startswith("_")),
+        fichiers = sorted((x for x in cfg.brutes.glob("*.json") if not x.name.startswith("_")),
                           key=lambda x: x.stat().st_mtime)
         if not fichiers:
-            sys.exit(f"Aucun relevé brut dans {dossier_brutes}")
+            sys.exit(f"Aucun relevé brut dans {cfg.brutes}")
         f = fichiers[-1]
     print(f"Fichier : {f.name}\n")
     n = 0

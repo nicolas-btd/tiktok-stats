@@ -2,9 +2,10 @@
 import csv
 import json
 from datetime import datetime
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
-from .releve import courbe_retention, fusionner, val
+from .config import Config
+from .releve import courbe_retention, fusionner, lire_videos, val
 
 COLONNES = [
     "dossier", "video_id", "date_publication", "heure_publication", "sujet", "duree_s",
@@ -19,10 +20,8 @@ def taux(x, vues):
     return round(x / vues * 100, 2) if vues else 0.0
 
 
-def ligne_video_donnees(dossier_brutes: Path, vid, dossier, sujets_map=None):
-    if sujets_map is None:
-        sujets_map = {}
-    fichiers = sorted(dossier_brutes.glob(f"{vid}_*.json"))
+def ligne_video(cfg: Config, vid, dossier):
+    fichiers = sorted(cfg.brutes.glob(f"{vid}_*.json"))
     if not fichiers:
         return None
     d = fusionner(json.loads(fichiers[-1].read_text()))
@@ -57,7 +56,7 @@ def ligne_video_donnees(dossier_brutes: Path, vid, dossier, sujets_map=None):
 
     legende = (info.get("desc") or "").replace("\n", " ").strip()
     dossier = dossier or ""
-    sujet = (sujets_map.get(dossier) or sujets_map.get(PurePosixPath(dossier).name)
+    sujet = (cfg.sujets.get(dossier) or cfg.sujets.get(PurePosixPath(dossier).name)
              or legende[:50])
 
     return {
@@ -80,9 +79,24 @@ def ligne_video_donnees(dossier_brutes: Path, vid, dossier, sujets_map=None):
         "legende": legende,
     }
 
-def generer_rapport_consolidation(resultats, titre="Tableau statistique global des vidéos publiques"):
+
+def lancer(cfg: Config):
+    resultats = [r for vid, dos in lire_videos(cfg) if (r := ligne_video(cfg, vid, dos))]
+    if not resultats:
+        print(f"⚠️ Aucune donnée : lancez d'abord un relevé (videos.txt + {cfg.brutes})")
+        return
+    resultats.sort(key=lambda r: r["_tri"], reverse=True)
+    cfg.consolidation_dir.mkdir(parents=True, exist_ok=True)
+    f_csv = cfg.consolidation_dir / "stats_completes.csv"
+    f_md = cfg.consolidation_dir / "stats_completes.md"
+
+    with f_csv.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=COLONNES, delimiter=";", extrasaction="ignore")
+        w.writeheader()
+        w.writerows(resultats)
+
     maintenant = datetime.now().strftime("%d/%m/%Y à %Hh%M")
-    L = [f"# 📊 {titre}",
+    L = [f"# 📊 {cfg.titre_consolidation}",
          f"> Relevé consolidé le **{maintenant}** · **{len(resultats)} vidéos publiques actives**.",
          "",
          "| Vidéo | Date Pub. | Heure | Sujet | Durée | Vues | Likes (Tx) | Comm. (Tx) | Part. | Fav. | Abos | Rét. 1s | Rét. 3s | Rét. 5s | Rét. 10s | Tps Moy. | % Tps | Vue Entière | % Pour Toi |",
@@ -94,4 +108,5 @@ def generer_rapport_consolidation(resultats, titre="Tableau statistique global d
             f"{r['commentaires']} ({r['taux_commentaires_pct']}%) | {r['partages']} | {r['favoris']} | +{r['nouveaux_abonnes']} | "
             f"{int(r['retention_1s_pct'])}% | {int(r['retention_3s_pct'])}% | {int(r['retention_5s_pct'])}% | {int(r['retention_10s_pct'])}% | "
             f"{r['temps_moyen_s']}s | {int(r['ratio_temps_moyen_pct'])}% | **{r['vue_entiere_pct']}%** | {int(r['pour_toi_pct'])}% |")
-    return "\n".join(L) + "\n"
+    f_md.write_text("\n".join(L) + "\n", encoding="utf-8")
+    print(f"✅ {f_csv} et {f_md.name} mis à jour ({len(resultats)} vidéos).")
