@@ -14,14 +14,34 @@ pipx install -e ~/Documents/Projets/tiktok-stats
 
 ## Utiliser dans un projet
 
+### 1. Initialiser le projet
+
 ```bash
 cd ~/mon-projet
-tiktok-stats init        # crée tiktok-stats.toml (à ajuster)
-tiktok-stats chrome      # ouvre Chrome avec le port 9222 → connectez-vous à TikTok Studio
-tiktok-stats tout        # relève tout le compte puis consolide
+tiktok-stats init        # crée tiktok-stats.toml (à ajuster selon vos dossiers)
 ```
 
-La configuration est cherchée dans le dossier courant puis ses parents : on peut lancer la commande depuis n'importe quel sous-dossier du projet. `-c chemin/vers/tiktok-stats.toml` force un fichier précis.
+La configuration est cherchée dans le dossier courant puis ses parents : on peut lancer les commandes depuis n'importe quel sous-dossier du projet (`-c chemin/vers/tiktok-stats.toml` pour forcer un fichier précis).
+
+### 2. Première connexion à TikTok (à faire une fois)
+
+L'outil ne gère pas les mots de passe ni les captchas : vous devez vous connecter **vous-même** à votre compte TikTok directement dans la fenêtre Chrome dédiée.
+
+1. Ouvrez simplement Chrome avec la commande dédiée :
+   ```bash
+   tiktok-stats chrome
+   ```
+2. Une fenêtre Chrome s'ouvre sur TikTok Studio avec un profil dédié (`~/.tiktok-stats/chrome-profile`).
+3. **Connectez-vous manuellement** à votre compte TikTok dans cette fenêtre (identifiants, vérification 2FA ou captcha).
+4. La session et les cookies restent conservés dans le profil : vous n'aurez pas besoin de vous reconnecter aux lancements suivants.
+
+### 3. Lancer le relevé des statistiques
+
+Une fois connecté sur TikTok Studio (la fenêtre Chrome restant ouverte en arrière-plan), vous pouvez lancer le relevé automatique :
+
+```bash
+tiktok-stats tout        # relève tout le compte puis consolide
+```
 
 ## Commandes
 
