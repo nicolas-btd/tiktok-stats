@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiktok-stats"
+version = "1.0.0"
+description = "Relevé automatique des statistiques TikTok Studio via une session Chrome (CDP)"
+requires-python = ">=3.11"
+dependencies = ["playwright>=1.40"]
+
+[project.scripts]
+tiktok-stats = "tiktok_stats.cli:main"
+
+[tool.setuptools]
+packages = ["tiktok_stats"]
